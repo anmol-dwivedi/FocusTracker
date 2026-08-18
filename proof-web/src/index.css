@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  color-scheme: light dark;
+}
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Monochrome surfaces. Dark is first-class, not an afterthought. */
+.proof-bg      { background: #ffffff; }
+.dark .proof-bg { background: #0a0a0b; }
+
+.proof-surface { background: #fafafb; border-color: #e4e6ea; }
+.dark .proof-surface { background: #131417; border-color: #25282e; }
+
+.proof-text    { color: #0e0f12; }
+.dark .proof-text { color: #f2f3f5; }
+
+.proof-muted   { color: #6b7178; }
+.dark .proof-muted { color: #868c96; }
+
+.proof-faint   { color: #a8aeb6; }
+.dark .proof-faint { color: #4a4f58; }
+
+.proof-border  { border-color: #e4e6ea; }
+.dark .proof-border { border-color: #25282e; }
+
+.proof-invert  { background: #0e0f12; color: #ffffff; }
+.dark .proof-invert { background: #f2f3f5; color: #0a0a0b; }
+
+.proof-invert:hover { background: #2b2f36; }
+.dark .proof-invert:hover { background: #d7dae0; }
+
+.timer-numerals {
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+*:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
