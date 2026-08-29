@@ -6,8 +6,20 @@ import { todaySummary } from '../lib/analytics'
 import { Card, Eyebrow, Primary, Quiet, Toggle } from '../components/ui'
 
 export function FocusPage({ controller }: { controller: FocusController }) {
-  const { active, remaining, sessions, start, endEarly, cancel, justCompleted, dismissCompleted } =
-    controller
+  const {
+    active,
+    isPaused,
+    remaining,
+    elapsed,
+    sessions,
+    start,
+    pause,
+    resume,
+    endEarly,
+    cancel,
+    justCompleted,
+    dismissCompleted,
+  } = controller
   const [minutes, setMinutes] = useState(45)
   const [custom, setCustom] = useState('')
   const [label, setLabel] = useState('')
@@ -37,23 +49,38 @@ export function FocusPage({ controller }: { controller: FocusController }) {
       )}
 
       <div className="flex flex-col items-center py-6 sm:py-10">
-        <p className="proof-text timer-numerals text-[19vw] leading-none sm:text-[7.5rem]">
+        <p
+          className={`timer-numerals text-[19vw] leading-none transition-opacity sm:text-[7.5rem] ${
+            isPaused ? 'proof-muted opacity-60' : 'proof-text'
+          }`}
+        >
           {display}
         </p>
         <p className="proof-muted mt-3 text-sm">
           {active
-            ? `Session ${today.sessions + 1} today${active.label ? ` — ${active.label}` : ''}`
+            ? `${isPaused ? 'Paused' : `Session ${today.sessions + 1} today`}${
+                active.label ? ` — ${active.label}` : ''
+              }`
             : `${minutes} minute session`}
         </p>
 
         {active ? (
           <div className="mt-8 flex flex-col items-center">
-            <div className="flex items-center gap-3">
-              <Primary onClick={() => void endEarly()}>END EARLY</Primary>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              {isPaused ? (
+                <Primary onClick={() => void resume()}>RESUME</Primary>
+              ) : (
+                <Primary onClick={() => void pause()}>PAUSE</Primary>
+              )}
+              <Toggle active={false} onClick={() => void endEarly()}>
+                End early
+              </Toggle>
               <Quiet onClick={() => void cancel()}>Cancel</Quiet>
             </div>
             <p className="proof-faint mt-3 text-xs">
-              Ending early logs the minutes you actually did.
+              {isPaused
+                ? `Paused. ${fmtMinutes(Math.round(elapsed))} of focus banked so far.`
+                : 'Paused time is excluded from your evidence.'}
             </p>
           </div>
         ) : (

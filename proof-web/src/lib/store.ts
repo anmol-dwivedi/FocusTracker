@@ -6,6 +6,8 @@ export interface SessionStore {
   list(): Promise<FocusSession[]>
   start(plannedSeconds: number, label: string | null): Promise<FocusSession>
   finish(id: string, status: SessionStatus, actualSeconds: number, endedAt?: string): Promise<void>
+  pause(id: string, pausedAt: string): Promise<void>
+  resume(id: string, pausedSeconds: number): Promise<void>
   remove(id: string): Promise<void>
 }
 
@@ -20,6 +22,8 @@ function newRow(plannedSeconds: number, label: string | null): FocusSession {
     planned_seconds: plannedSeconds,
     actual_seconds: null,
     status: 'active',
+    paused_at: null,
+    paused_seconds: 0,
     label: label?.trim() || null,
     notes: null,
     created_at: stamp,
@@ -62,6 +66,7 @@ export class LocalStore implements SessionStore {
         row.status = 'cancelled'
         row.actual_seconds = 0
         row.ended_at = stamp
+        row.paused_at = null
         row.updated_at = stamp
       }
     }
@@ -79,7 +84,27 @@ export class LocalStore implements SessionStore {
     row.status = status
     row.actual_seconds = Math.max(0, Math.round(actualSeconds))
     row.ended_at = stamp
+    row.paused_at = null
     row.updated_at = stamp
+    this.write(rows)
+  }
+
+  async pause(id: string, pausedAt: string): Promise<void> {
+    const rows = this.read()
+    const row = rows.find((r) => r.id === id)
+    if (!row || row.paused_at) return
+    row.paused_at = pausedAt
+    row.updated_at = new Date().toISOString()
+    this.write(rows)
+  }
+
+  async resume(id: string, pausedSeconds: number): Promise<void> {
+    const rows = this.read()
+    const row = rows.find((r) => r.id === id)
+    if (!row) return
+    row.paused_at = null
+    row.paused_seconds = Math.max(0, Math.round(pausedSeconds))
+    row.updated_at = new Date().toISOString()
     this.write(rows)
   }
 
@@ -106,7 +131,13 @@ export class CloudStore implements SessionStore {
     const stamp = new Date().toISOString()
     await supabase!
       .from('focus_sessions')
-      .update({ status: 'cancelled', actual_seconds: 0, ended_at: stamp, updated_at: stamp })
+      .update({
+        status: 'cancelled',
+        actual_seconds: 0,
+        ended_at: stamp,
+        paused_at: null,
+        updated_at: stamp,
+      })
       .eq('status', 'active')
 
     const row = newRow(plannedSeconds, label)
@@ -127,7 +158,29 @@ export class CloudStore implements SessionStore {
         status,
         actual_seconds: Math.max(0, Math.round(actualSeconds)),
         ended_at: stamp,
+        paused_at: null,
         updated_at: stamp,
+      })
+      .eq('id', id)
+    if (error) throw error
+  }
+
+  async pause(id: string, pausedAt: string): Promise<void> {
+    const { error } = await supabase!
+      .from('focus_sessions')
+      .update({ paused_at: pausedAt, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .is('paused_at', null)
+    if (error) throw error
+  }
+
+  async resume(id: string, pausedSeconds: number): Promise<void> {
+    const { error } = await supabase!
+      .from('focus_sessions')
+      .update({
+        paused_at: null,
+        paused_seconds: Math.max(0, Math.round(pausedSeconds)),
+        updated_at: new Date().toISOString(),
       })
       .eq('id', id)
     if (error) throw error

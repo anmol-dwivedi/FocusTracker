@@ -5,6 +5,7 @@ import type { SessionStore } from '../lib/store'
 export interface FocusController {
   sessions: FocusSession[]
   active: FocusSession | null
+  isPaused: boolean
   remaining: number
   elapsed: number
   loading: boolean
@@ -12,6 +13,8 @@ export interface FocusController {
   justCompleted: FocusSession | null
   dismissCompleted: () => void
   start: (plannedSeconds: number, label: string | null) => Promise<void>
+  pause: () => Promise<void>
+  resume: () => Promise<void>
   endEarly: () => Promise<void>
   cancel: () => Promise<void>
   remove: (id: string) => Promise<void>
@@ -22,6 +25,11 @@ export interface FocusController {
  * The countdown is never a decrementing counter. It is always
  * expected_end minus the wall clock, so a refresh, a sleeping laptop,
  * or a throttled background tab cannot corrupt it.
+ *
+ * Pausing works by pushing expected_end forward for exactly as long as
+ * the session stays paused. Because the paused time grows at the same
+ * rate as the clock, the remaining time freezes on its own - no special
+ * case in the display, and a refresh mid-pause resumes still paused.
  */
 export function useFocusSessions(store: SessionStore): FocusController {
   const [sessions, setSessions] = useState<FocusSession[]>([])
@@ -52,10 +60,20 @@ export function useFocusSessions(store: SessionStore): FocusController {
     [sessions],
   )
 
+  const isPaused = Boolean(active?.paused_at)
+
+  /** Total seconds this session has spent paused, including the pause in progress. */
+  const pausedSoFar = useMemo(() => {
+    if (!active) return 0
+    const banked = active.paused_seconds ?? 0
+    if (!active.paused_at) return banked
+    return banked + Math.max(0, (now - new Date(active.paused_at).getTime()) / 1000)
+  }, [active, now])
+
   const expectedEnd = useMemo(() => {
     if (!active) return null
-    return new Date(active.started_at).getTime() + active.planned_seconds * 1000
-  }, [active])
+    return new Date(active.started_at).getTime() + (active.planned_seconds + pausedSoFar) * 1000
+  }, [active, pausedSoFar])
 
   // Only run the clock while something is actually running.
   useEffect(() => {
@@ -66,11 +84,16 @@ export function useFocusSessions(store: SessionStore): FocusController {
   }, [active])
 
   const remaining = expectedEnd ? Math.max(0, (expectedEnd - now) / 1000) : 0
-  const elapsed = active ? Math.max(0, (now - new Date(active.started_at).getTime()) / 1000) : 0
+
+  /** Real focus time: wall-clock elapsed, minus everything spent paused. */
+  const elapsed = active
+    ? Math.max(0, (now - new Date(active.started_at).getTime()) / 1000 - pausedSoFar)
+    : 0
 
   // Auto-complete, including a session whose time elapsed while the tab was closed.
+  // A paused session can never reach this: expected_end moves with the clock.
   useEffect(() => {
-    if (!active || !expectedEnd) return
+    if (!active || !expectedEnd || isPaused) return
     if (now < expectedEnd) return
     if (completing.current === active.id) return
     completing.current = active.id
@@ -89,7 +112,7 @@ export function useFocusSessions(store: SessionStore): FocusController {
         setError(err instanceof Error ? err.message : 'Could not save that session.')
       }
     })()
-  }, [active, expectedEnd, now, store, refresh])
+  }, [active, expectedEnd, isPaused, now, store, refresh])
 
   const start = useCallback(
     async (plannedSeconds: number, label: string | null) => {
@@ -104,6 +127,28 @@ export function useFocusSessions(store: SessionStore): FocusController {
     },
     [store, refresh],
   )
+
+  const pause = useCallback(async () => {
+    if (!active || active.paused_at) return
+    try {
+      await store.pause(active.id, new Date().toISOString())
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not pause that session.')
+    }
+  }, [active, store, refresh])
+
+  const resume = useCallback(async () => {
+    if (!active || !active.paused_at) return
+    const banked = (active.paused_seconds ?? 0)
+      + Math.max(0, (Date.now() - new Date(active.paused_at).getTime()) / 1000)
+    try {
+      await store.resume(active.id, banked)
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not resume that session.')
+    }
+  }, [active, store, refresh])
 
   const endEarly = useCallback(async () => {
     if (!active) return
@@ -143,6 +188,7 @@ export function useFocusSessions(store: SessionStore): FocusController {
   return {
     sessions,
     active,
+    isPaused,
     remaining,
     elapsed,
     loading,
@@ -150,6 +196,8 @@ export function useFocusSessions(store: SessionStore): FocusController {
     justCompleted,
     dismissCompleted: () => setJustCompleted(null),
     start,
+    pause,
+    resume,
     endEarly,
     cancel,
     remove,

@@ -11,6 +11,10 @@ export interface FocusSession {
   planned_seconds: number
   actual_seconds: number | null
   status: SessionStatus
+  /** When currently paused, the moment the pause began. Null while running. */
+  paused_at: string | null
+  /** Total seconds spent paused across all previous pauses in this session. */
+  paused_seconds: number
   label: string | null
   notes: string | null
   created_at: string

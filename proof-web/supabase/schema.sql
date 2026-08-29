@@ -12,6 +12,8 @@ create table if not exists public.focus_sessions (
   actual_seconds  integer check (actual_seconds >= 0),
   status          text not null default 'active'
                     check (status in ('active','completed','ended_early','cancelled')),
+  paused_at       timestamptz,
+  paused_seconds  integer not null default 0,
   label           text,
   notes           text,
   created_at      timestamptz not null default now(),
