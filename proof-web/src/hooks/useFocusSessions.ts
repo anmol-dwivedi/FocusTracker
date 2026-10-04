@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FocusSession } from '../types'
 import type { SessionStore } from '../lib/store'
+import { playCompletionChime, unlockAudio } from '../lib/sound'
 
 export interface FocusController {
   sessions: FocusSession[]
@@ -21,6 +22,9 @@ export interface FocusController {
   refresh: () => Promise<void>
 }
 
+/** A completion older than this was missed while the tab was closed, so it stays silent. */
+const CHIME_GRACE_MS = 5000
+
 /**
  * The countdown is never a decrementing counter. It is always
  * expected_end minus the wall clock, so a refresh, a sleeping laptop,
@@ -28,8 +32,8 @@ export interface FocusController {
  *
  * Pausing works by pushing expected_end forward for exactly as long as
  * the session stays paused. Because the paused time grows at the same
- * rate as the clock, the remaining time freezes on its own - no special
- * case in the display, and a refresh mid-pause resumes still paused.
+ * rate as the clock, the remaining time freezes on its own, with no
+ * special case in the display, and a refresh mid-pause resumes paused.
  */
 export function useFocusSessions(store: SessionStore): FocusController {
   const [sessions, setSessions] = useState<FocusSession[]>([])
@@ -98,6 +102,9 @@ export function useFocusSessions(store: SessionStore): FocusController {
     if (completing.current === active.id) return
     completing.current = active.id
     const finished = active
+    // Ring only for a session that just ran out in front of you, not one
+    // that quietly expired while the laptop was shut.
+    const shouldChime = Date.now() - expectedEnd < CHIME_GRACE_MS
     void (async () => {
       try {
         await store.finish(
@@ -108,6 +115,7 @@ export function useFocusSessions(store: SessionStore): FocusController {
         )
         await refresh()
         setJustCompleted(finished)
+        if (shouldChime) playCompletionChime()
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not save that session.')
       }
@@ -116,6 +124,10 @@ export function useFocusSessions(store: SessionStore): FocusController {
 
   const start = useCallback(
     async (plannedSeconds: number, label: string | null) => {
+      // This call is inside the START FOCUS click, which is the only moment
+      // the browser will let us open an audio context. Without it, the chime
+      // at the end of the session is silently blocked.
+      unlockAudio()
       completing.current = null
       setJustCompleted(null)
       try {
@@ -140,6 +152,8 @@ export function useFocusSessions(store: SessionStore): FocusController {
 
   const resume = useCallback(async () => {
     if (!active || !active.paused_at) return
+    // Resuming is also a click, so take the chance to keep the context awake.
+    unlockAudio()
     const banked = (active.paused_seconds ?? 0)
       + Math.max(0, (Date.now() - new Date(active.paused_at).getTime()) / 1000)
     try {
